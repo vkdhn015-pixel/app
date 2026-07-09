@@ -1,0 +1,194 @@
+{
+  "app_name": "Daman-Style Gaming Platform",
+  "personality": "4 Tactile / Playful LIGHT with iOS-Native Clean finishes",
+  "personality_one_liner": "A premium, fast, and highly trustworthy mobile gaming platform with luxurious peach-to-coral accents and soft tactile cards.",
+  "color": {
+    "surface": "#FFFFFF",
+    "onSurface": "#1A1A1A",
+    "surfaceSecondary": "#F7F8FA",
+    "onSurfaceSecondary": "#333333",
+    "surfaceTertiary": "#EDEDF0",
+    "onSurfaceTertiary": "#4A4A4A",
+    "surfaceInverse": "#212121",
+    "onSurfaceInverse": "#FFFFFF",
+    "brand": "#FF7E67",
+    "brandPrimary": "#FF6B6B",
+    "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#FF9A9E",
+    "onBrandSecondary": "#1A1A1A",
+    "brandTertiary": "#FFEFEF",
+    "onBrandTertiary": "#E53935",
+    "success": "#2ECA7F",
+    "onSuccess": "#FFFFFF",
+    "warning": "#FFB020",
+    "onWarning": "#FFFFFF",
+    "error": "#FF4D4F",
+    "onError": "#FFFFFF",
+    "info": "#4A4A4A",
+    "onInfo": "#FFFFFF",
+    "border": "#EAEAEA",
+    "borderStrong": "#D1D1D1",
+    "divider": "#F0F0F0"
+  },
+  "typography": {
+    "displayFontFamily": "Plus Jakarta Sans",
+    "textFontFamily": "Plus Jakarta Sans",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Use 8px grid system. Generous padding around cards (lg or xl) so the UI doesn't feel cramped. Touch targets must be minimum 44pt.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 8,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": 2,
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Use on sticky headers over scrolling content",
+      "Use on bottom tab bar",
+      "Use as a subtle overlay on the hero banner gradient"
+    ],
+    "dont's": [
+      "Do not use on dense lists or standard cards",
+      "Do not use on forms or inputs"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Splash",
+      "purpose": "A premium entry experience.",
+      "states": {
+        "loading": "Full-bleed peach-to-coral gradient with logo centered.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Full screen gradient background using expo-linear-gradient (brandSecondary to brandPrimary). App logo perfectly centered. No status bar background."
+    },
+    {
+      "name": "Login",
+      "purpose": "Frictionless mobile OTP authentication.",
+      "states": {
+        "loading": "Activity indicator inside the primary Login CTA button.",
+        "empty": "N/A",
+        "error": "Inline error text below the phone number input (red)."
+      },
+      "layout": "Top 30% features a soft peach gradient wave. Content sits in a white rounded sheet overlapping the wave. Large bold 'Welcome Back' title. Phone number input with prefix (+91). Prominent pill-shaped CTA."
+    },
+    {
+      "name": "Home",
+      "purpose": "The main hub for live games, quick transactions, and promotions.",
+      "states": {
+        "loading": "Skeleton loaders for cards and game tiles.",
+        "empty": "N/A",
+        "error": "Centered 'Failed to load data' with a 'Retry' button."
+      },
+      "layout": "Sticky Header with user avatar, UID, and notification bell. Below header: A floating 'Wallet Balance' card (solid surface with soft shadow) overlapping a peach-to-coral gradient background section. Quick actions row (Deposit, Withdraw, Support) below the card. A horizontal promotional banner carousel. Followed by vertical lists/rails for 'Popular Games' and 'Trending Games'. Games are displayed as 2-column or 3-column rounded image tiles. Generous lg padding on screen edges."
+    },
+    {
+      "name": "Wallet",
+      "purpose": "Manage funds, deposit, withdraw, and view transaction history.",
+      "states": {
+        "loading": "Skeleton loader for balance and list items.",
+        "empty": "Illustration of an empty wallet with 'No transactions yet'.",
+        "error": "Error toast or inline retry component."
+      },
+      "layout": "Large primary balance card at the top. Segmented control for (Transactions | Deposits | Withdrawals). Underneath, a scrollable list of transactions. Each row has an icon (green/red), title, date, and amount right-aligned."
+    },
+    {
+      "name": "Deposit",
+      "purpose": "Seamless fund top-up using QR and UPI.",
+      "states": {
+        "loading": "Spinner over the QR code area while generating.",
+        "empty": "N/A",
+        "error": "Red text indicating payment failure or validation error."
+      },
+      "layout": "Amount input field at top with quick-select chips (\u20b9500, \u20b91000, etc.). Below it, a segmented control or cards to select UPI or QR. If QR: display large QR code inside a bordered white card with 'Download QR' and 'Copy UTR' buttons. Bottom sticky 'Confirm Deposit' CTA."
+    },
+    {
+      "name": "Admin Panel",
+      "purpose": "Manage users, payments, and view platform metrics.",
+      "states": {
+        "loading": "Skeleton grid for dashboard stats.",
+        "empty": "N/A",
+        "error": "Standard retry state."
+      },
+      "layout": "Dashboard summary at top with 4 stat cards (Total Users, Daily Revenue, Pending Deposits, Pending Withdrawals). Below, a grid menu for User Management, Payment Settings, and Reports. Clean, utilitarian, data-dense but using the same brand accents."
+    }
+  ],
+  "images": {
+    "promo_banner_1": {
+      "url": "https://images.unsplash.com/photo-1677186304454-6fbe1fe3aaef?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBnYW1pbmclMjBwcm9tb3Rpb25hbCUyMGJhbm5lcnxlbnwwfHx8fDE3ODM2MDA1ODB8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Casino entrance neon sign banner"
+    },
+    "promo_banner_2": {
+      "url": "https://images.unsplash.com/photo-1638561186238-3227892dbc18?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODl8MHwxfHNlYXJjaHwxfHxsdXh1cnklMjBnYW1pbmclMjBwcm9tb3Rpb25hbCUyMGJhbm5lcnxlbnwwfHx8fDE3ODM2MDA1ODB8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Pink gaming graphic banner"
+    },
+    "bg_peach_gradient": {
+      "url": "https://images.unsplash.com/photo-1548504778-b14db6c34b04?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTV8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMHBlYWNoJTIwY29yYWwlMjBncmFkaWVudCUyMHRleHR1cmV8ZW58MHx8fHwxNzgyMjg5NDE0fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract peach coral gradient texture"
+    },
+    "game_dice": {
+      "url": "https://images.unsplash.com/photo-1522069213448-443a614da9b6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwxfHxjYXNpbm8lMjBkaWNlJTIwbWluaW1hbHxlbnwwfHx8fDE3ODI3MzEwMTh8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Red casino dice game thumbnail"
+    },
+    "game_spin": {
+      "url": "https://images.pexels.com/photos/20240881/pexels-photo-20240881.jpeg",
+      "alt": "Colorful spin wheel graphic thumbnail"
+    },
+    "game_aviator": {
+      "url": "https://images.unsplash.com/photo-1763309631391-3192b0ba0eb4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxhaXJwbGFuZSUyMGZseWluZyUyMHVwJTIwZGFyayUyMGJhY2tncm91bmR8ZW58MHx8fHwxNzgyNDUxNTQzfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Aviator airplane game thumbnail"
+    }
+  },
+  "haptics": {
+    "primary_button_press": "impactLight",
+    "tab_bar_switch": "selection",
+    "game_tile_tap": "impactLight",
+    "pull_to_refresh": "impactMedium",
+    "deposit_success": "notificationSuccess",
+    "error_state": "notificationError"
+  },
+  "instructions_to_main_agent": [
+    "Follow the 4 Tactile / Playful LIGHT personality with iOS-Native Clean finishes. The app should feel premium and trustworthy, not cheap.",
+    "No blue, purple, or indigo used anywhere in the app per the core design rules. Use the coral/peach brand palette provided.",
+    "Implement the 20px (lg) border radius on all cards and game tiles to match the 'white rounded cards' requirement.",
+    "Ensure sticky headers have a glassmorphism effect (expo-blur or expo-glass-effect) when content scrolls behind them.",
+    "For the Home screen, create a visually distinct top section using the peach-to-coral gradient. The Wallet Balance card should visually overlap the boundary between this gradient header and the white background below it.",
+    "Implement text scrims (gradient overlay) on any image cards where text is rendered on top to ensure WCAG accessibility.",
+    "Use Phosphor icons consistently across all screens, with filled variants for active states and outlined for inactive states.",
+    "Provide empty/loading/error states for all data-fetching screens (Wallet, Transactions, Game lists) taking up flex:1 layout space.",
+    "Serialize the provided haptics block to trigger vibrations on user interactions like button presses and tab switches."
+  ]
+}
