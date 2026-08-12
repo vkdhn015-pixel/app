@@ -11,6 +11,7 @@ import Animated, {
 import { colors, spacing, radius, shadows } from '@/src/theme';
 import { PrimaryButton, inputStyle } from '@/src/ui';
 import { api } from '@/src/api';
+import LiveBetFeed from '@/src/components/LiveBetFeed';
 
 const TITLES: Record<string, { title: string; color: string; icon: any }> = {
   crash: { title: 'Crash', color: '#FF6B6B', icon: 'rocket' },
@@ -85,10 +86,16 @@ export default function GameScreen() {
   const [celebrate, setCelebrate] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [history, setHistory] = useState<Array<{ win: boolean; label: string }>>([]);
+  const [flying, setFlying] = useState(false);
+  const isCrash = gt === 'crash' || gt === 'aviator';
 
   const multTimer = useRef<any>(null);
   const revealTimer = useRef<any>(null);
   const cdTimer = useRef<any>(null);
+  const climbTimer = useRef<any>(null);
+  const pollTimer = useRef<any>(null);
+  const roundRef = useRef<{ id: string; start: number; auto: number | null } | null>(null);
+  const cashingRef = useRef(false);
 
   // reanimated shared values
   const fly = useSharedValue(0);        // crash/aviator climb 0..1
@@ -107,7 +114,7 @@ export default function GameScreen() {
   }, []);
 
   const clearTimers = useCallback(() => {
-    [multTimer, revealTimer, cdTimer].forEach((t) => { if (t.current) { clearInterval(t.current); clearTimeout(t.current); t.current = null; } });
+    [multTimer, revealTimer, cdTimer, climbTimer, pollTimer].forEach((t) => { if (t.current) { clearInterval(t.current); clearTimeout(t.current); t.current = null; } });
   }, []);
 
   useEffect(() => () => { clearTimers(); [fly, rotate, diceRot, diceBounce, bgShift, cardFlip, ballDrop, dartFly].forEach(cancelAnimation); }, []);
@@ -130,26 +137,7 @@ export default function GameScreen() {
       return;
     }
 
-    if (gt === 'crash' || gt === 'aviator') {
-      const target = r[gt === 'crash' ? 'crash_at' : 'fly_to'];
-      const dur = 1500;
-      fly.value = 0;
-      fly.value = withTiming(1, { duration: dur, easing: Easing.in(Easing.quad) });
-      bgShift.value = withTiming(1, { duration: dur, easing: Easing.linear });
-      // live multiplier counter (JS thread, ~30ms tick)
-      const start = Date.now();
-      setLiveMult('1.00');
-      multTimer.current = setInterval(() => {
-        const t = Math.min(1, (Date.now() - start) / dur);
-        const val = 1 + (target - 1) * t;
-        setLiveMult(val.toFixed(2));
-        if (t >= 1) {
-          clearInterval(multTimer.current); multTimer.current = null;
-          bgShift.value = 0;
-          finishRound(res, res.win ? `CASHED @ ${r.cash_out}x` : `CRASHED @ ${target.toFixed(2)}x`);
-        }
-      }, 30);
-    } else if (gt === 'spin') {
+    if (gt === 'spin') {
       const idx = r.segment_index || 0;
       rotate.value = 0;
       rotate.value = withTiming(360 * 5 + (360 - idx * 45), { duration: 2600, easing: Easing.out(Easing.cubic) });
@@ -205,6 +193,90 @@ export default function GameScreen() {
     }
   };
 
+  // ---- Interactive Crash / Aviator ----
+  const CURVE_A = 0.35, CURVE_B = 0.09;
+  const multAt = (elapsedS: number) => 1 + CURVE_A * elapsedS + CURVE_B * elapsedS * elapsedS;
+
+  const endCrashRound = () => {
+    if (climbTimer.current) { clearInterval(climbTimer.current); climbTimer.current = null; }
+    if (pollTimer.current) { clearInterval(pollTimer.current); pollTimer.current = null; }
+    setFlying(false);
+    bgShift.value = withTiming(0, { duration: 300 });
+  };
+
+  const onCrash = (crashPoint?: number) => {
+    if (cashingRef.current) return;
+    cashingRef.current = true;
+    endCrashRound();
+    // explosion: drop back down
+    fly.value = withTiming(0, { duration: 400, easing: Easing.in(Easing.quad) });
+    setResult({ win: false, payout: 0, result: {} });
+    finishRound({ win: false }, crashPoint ? `CRASHED @ ${crashPoint.toFixed(2)}x` : 'CRASHED');
+    if (roundRef.current) api.crashSettle(roundRef.current.id).catch(() => {});
+  };
+
+  const doCashout = async (atMult: number) => {
+    if (cashingRef.current || !roundRef.current) return;
+    cashingRef.current = true;
+    const rid = roundRef.current.id;
+    endCrashRound();
+    try {
+      const res = await api.crashCashout(rid, Number(atMult.toFixed(2)));
+      setBalance(res.balance);
+      if (res.win) {
+        setResult({ win: true, payout: res.payout, result: { multiplier: res.multiplier } });
+        setLiveMult(res.multiplier.toFixed(2));
+        finishRound({ win: true }, `CASHED @ ${res.multiplier}x`);
+      } else {
+        setResult({ win: false, payout: 0, result: {} });
+        finishRound({ win: false }, `CRASHED @ ${(res.crash_point || 0).toFixed(2)}x`);
+      }
+    } catch (e: any) {
+      setError(e.message || 'Cash-out failed');
+      finishRound({ win: false }, 'ERROR');
+    }
+  };
+
+  const startCrashRound = async (amt: number) => {
+    try {
+      const auto = parseFloat(cashOut);
+      const autoVal = !isNaN(auto) && auto > 1 ? auto : null;
+      const res = await api.crashStart(amt, gt, autoVal);
+      setBalance(res.balance);
+      roundRef.current = { id: res.round_id, start: Date.now(), auto: autoVal };
+      cashingRef.current = false;
+      setResult(null);
+      setFlying(true);
+      setLiveMult('1.00');
+      setDisplay('FLYING');
+      fly.value = 0;
+      bgShift.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1, false);
+
+      // local climb + auto cash-out
+      climbTimer.current = setInterval(() => {
+        if (!roundRef.current) return;
+        const t = (Date.now() - roundRef.current.start) / 1000;
+        const m = multAt(t);
+        setLiveMult(m.toFixed(2));
+        fly.value = Math.min(1, (m - 1) / 10);
+        if (roundRef.current.auto && m >= roundRef.current.auto && !cashingRef.current) {
+          doCashout(roundRef.current.auto);
+        }
+      }, 40);
+
+      // poll server for crash (server is authoritative, crash point hidden)
+      pollTimer.current = setInterval(async () => {
+        if (!roundRef.current || cashingRef.current) return;
+        try {
+          const st = await api.crashStatus(roundRef.current.id);
+          if (st.status === 'crashed') onCrash(st.crash_point);
+        } catch {}
+      }, 350);
+    } catch (e: any) {
+      setError(e.message || 'Could not start round'); setDisplay('ERROR'); setBusy(false); setFlying(false);
+    }
+  };
+
   const play = async () => {
     if (busy) return; // prevent duplicate taps
     const amt = parseFloat(bet) || 0;
@@ -214,9 +286,9 @@ export default function GameScreen() {
     clearTimers();
 
     const startRound = async () => {
+      if (isCrash) { await startCrashRound(amt); return; }
       try {
         const params: any = {};
-        if (gt === 'crash' || gt === 'aviator') params.cash_out = parseFloat(cashOut) || 2.0;
         if (gt === 'dice') { params.pick = pick; params.threshold = threshold; }
         if (gt === 'andar-bahar') params.pick = abPick;
         if (gt === 'number-king') params.number = numberPick;
@@ -231,7 +303,7 @@ export default function GameScreen() {
     };
 
     // Countdown for crash/aviator, else straight to round
-    if ((gt === 'crash' || gt === 'aviator') && !reduceMotion) {
+    if (isCrash && !reduceMotion) {
       let c = 3; setCountdown(c);
       cdTimer.current = setInterval(() => {
         c -= 1;
@@ -267,6 +339,8 @@ export default function GameScreen() {
       </LinearGradient>
 
       <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
+        {/* Live bet feed */}
+        <LiveBetFeed game={gt} />
         {/* Game stage */}
         <View style={styles.stage}>
           <LinearGradient colors={['#1F2937', '#111827']} style={styles.stageBg}>
@@ -286,7 +360,7 @@ export default function GameScreen() {
                 {(gt === 'crash' || gt === 'aviator') && (
                   <>
                     <Animated.View style={flyStyle}><Ionicons name={meta.icon} size={72} color="#fff" /></Animated.View>
-                    {busy && <Text style={styles.liveMult}>{liveMult}x</Text>}
+                    {(flying || busy) && <Text style={[styles.liveMult, !flying && result && !result.win && { color: '#FF4D4F' }]}>{liveMult}x</Text>}
                   </>
                 )}
 
@@ -489,7 +563,15 @@ export default function GameScreen() {
           )}
 
           <View style={{ height: 16 }} />
-          <PrimaryButton testID="play-btn" label={busy ? 'Playing…' : `Place Bet · ₹${bet || 0}`} onPress={play} loading={busy} disabled={busy} />
+          {isCrash && flying ? (
+            <Pressable testID="cash-out-btn" onPress={() => doCashout(parseFloat(liveMult))} style={styles.cashOutBtn}>
+              <Ionicons name="hand-left" size={20} color="#fff" />
+              <Text style={styles.cashOutText}>CASH OUT · {liveMult}x</Text>
+              <Text style={styles.cashOutSub}>₹{((parseFloat(bet) || 0) * parseFloat(liveMult)).toFixed(0)}</Text>
+            </Pressable>
+          ) : (
+            <PrimaryButton testID="play-btn" label={busy ? (isCrash ? 'Launching…' : 'Playing…') : `Place Bet · ₹${bet || 0}`} onPress={play} loading={busy && !isCrash} disabled={busy} />
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -575,4 +657,7 @@ const styles = StyleSheet.create({
   numBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.surfaceSecondary, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
   numBtnA: { backgroundColor: colors.brandPrimary, borderColor: colors.brandPrimary },
   numTxt: { fontWeight: '800', color: colors.onSurface },
+  cashOutBtn: { minHeight: 56, borderRadius: radius.pill, backgroundColor: '#2ECA7F', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, ...shadows.card },
+  cashOutText: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  cashOutSub: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '800' },
 });

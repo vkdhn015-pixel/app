@@ -52,6 +52,14 @@ export const api = {
   gameCatalog: () => request('/games/catalog'),
   play: (payload: { game_type: string; bet_amount: number; params?: any }) =>
     request('/games/play', { method: 'POST', body: JSON.stringify(payload) }),
+  crashStart: (bet_amount: number, game_type: string, auto_cash_out?: number | null) =>
+    request('/games/crash/start', { method: 'POST', body: JSON.stringify({ bet_amount, game_type, auto_cash_out }) }),
+  crashStatus: (round_id: string) => request(`/games/crash/status/${round_id}`),
+  crashCashout: (round_id: string, multiplier: number) =>
+    request('/games/crash/cashout', { method: 'POST', body: JSON.stringify({ round_id, multiplier }) }),
+  crashSettle: (round_id: string) =>
+    request('/games/crash/settle', { method: 'POST', body: JSON.stringify({ round_id }) }),
+  gamesFeed: (game?: string) => request(`/games/feed${game ? `?game=${game}` : ''}`),
   // promotions / vip / notifications / support
   promotions: () => request('/promotions'),
   vip: () => request('/vip'),

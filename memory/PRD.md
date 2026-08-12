@@ -20,6 +20,16 @@ Crash, Aviator, Dice, Spin Wheel, Andar Bahar, Teen Patti, Number King, Plinko, 
 - Number King: shuffle reveal. Plinko: ball drop. Mines: sequential tile reveal. Match3: reels. Bull's Eye: dart fly.
 - Global: round-history chips (fade/slide), win particle burst, reduced-motion support (AccessibilityInfo), loading/error states, duplicate-tap prevention (controls disabled while busy).
 
+## Crash / Aviator — interactive cash-out
+- `POST /games/crash/start` deducts bet, commits a hidden server-side crash point (62% crash <1.25x, 38% winnable up to 12x → preserves 38% economics).
+- Client flies rocket with a live multiplier (shared curve m(t)=1+0.35t+0.09t²), shows a green CASH OUT button.
+- `GET /games/crash/status/{id}` is polled (crash point revealed only after it crashes → anti-cheat).
+- `POST /games/crash/cashout` settles the win at the tapped multiplier (server clamps by time + crash point).
+- `POST /games/crash/settle` records a loss if the rocket crashes with no cash-out. Auto cash-out still supported via the Auto Cash-Out field.
+
+## Live Bet Feed
+- `GET /games/feed` returns recent real wins (masked names) padded with synthetic entries; `LiveBetFeed` component shows a scrolling "LIVE WINS" strip on every game screen, prepending a new entry every ~2.8s.
+
 ## Game economics
 Server-controlled: 38% win / 62% loss. Adjustable at Admin → App Settings. Outcomes are decided server-side (fair random) — animations only visualize the returned result.
 

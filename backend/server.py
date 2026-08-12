@@ -167,6 +167,32 @@ class PlayGameIn(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict)
 
 
+# Interactive crash/aviator round
+class CrashStartIn(BaseModel):
+    bet_amount: float
+    game_type: str = "crash"  # crash | aviator
+    auto_cash_out: Optional[float] = None
+
+
+class CrashCashoutIn(BaseModel):
+    round_id: str
+    multiplier: float
+
+
+class CrashSettleIn(BaseModel):
+    round_id: str
+
+
+# Shared multiplier curve: m(t) = 1 + A*t + B*t^2  (t in seconds)
+CRASH_A = 0.35
+CRASH_B = 0.09
+
+
+def crash_multiplier_at(elapsed_s: float) -> float:
+    return round(1.0 + CRASH_A * elapsed_s + CRASH_B * elapsed_s * elapsed_s, 2)
+
+
+
 class DepositCreate(BaseModel):
     amount: float
     utr: str
@@ -639,7 +665,158 @@ async def play_game(payload: PlayGameIn, user=Depends(get_current_user)):
 
 
 # =========================================================
-# PROMOTIONS / VIP / NOTIFICATIONS / SUPPORT
+# INTERACTIVE CRASH / AVIATOR (live tap-to-cash-out)
+# =========================================================
+@api.post("/games/crash/start")
+async def crash_start(payload: CrashStartIn, user=Depends(get_current_user)):
+    bet = payload.bet_amount
+    if bet <= 0:
+        raise HTTPException(400, "Bet must be positive")
+    if bet > user["balance"]:
+        raise HTTPException(400, "Insufficient balance")
+
+    win_rate = await get_win_rate()
+    winnable = random.random() < win_rate
+    # Economics: ~win_rate rounds give room to cash out; rest crash almost instantly.
+    if winnable:
+        crash_point = round(random.uniform(1.30, 12.0), 2)
+    else:
+        crash_point = round(random.uniform(1.00, 1.25), 2)
+
+    await db.users.update_one({"id": user["id"]}, {"$inc": {"balance": -bet, "total_wagered": bet}})
+    await add_transaction(user["id"], "bet", -bet, {"game": payload.game_type})
+
+    rid = new_id()
+    started_at = datetime.now(timezone.utc)
+    await db.crash_rounds.insert_one({
+        "id": rid,
+        "user_id": user["id"],
+        "game_type": payload.game_type,
+        "bet": bet,
+        "crash_point": crash_point,
+        "auto_cash_out": payload.auto_cash_out,
+        "started_at": started_at.isoformat(),
+        "settled": False,
+    })
+    fresh = clean(await db.users.find_one({"id": user["id"]}))
+    # crash_point is intentionally NOT returned to the client (anti-cheat).
+    return {
+        "round_id": rid,
+        "started_at": started_at.isoformat(),
+        "auto_cash_out": payload.auto_cash_out,
+        "balance": fresh["balance"],
+        "curve": {"a": CRASH_A, "b": CRASH_B},
+    }
+
+
+@api.post("/games/crash/cashout")
+async def crash_cashout(payload: CrashCashoutIn, user=Depends(get_current_user)):
+    rnd = await db.crash_rounds.find_one({"id": payload.round_id, "user_id": user["id"]})
+    if not rnd:
+        raise HTTPException(404, "Round not found")
+    if rnd["settled"]:
+        raise HTTPException(400, "Round already settled")
+
+    started = datetime.fromisoformat(rnd["started_at"])
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    server_mult = crash_multiplier_at(elapsed)
+    crash_point = rnd["crash_point"]
+
+    # If the round has already reached the crash point (server-side time), it's a loss.
+    if server_mult >= crash_point:
+        await db.crash_rounds.update_one({"id": rnd["id"]}, {"$set": {"settled": True, "outcome": "crashed", "settled_at": now_iso()}})
+        fresh = clean(await db.users.find_one({"id": user["id"]}))
+        return {"win": False, "crashed": True, "crash_point": crash_point, "balance": fresh["balance"]}
+
+    # Effective cash-out multiplier: clamped by both crash point and server time (anti-cheat).
+    effective = min(payload.multiplier, crash_point, server_mult + 0.15)
+    effective = max(1.01, round(effective, 2))
+    payout = round(rnd["bet"] * effective, 2)
+
+    await db.users.update_one({"id": user["id"]}, {"$inc": {"balance": payout}})
+    await add_transaction(user["id"], "win", payout, {"game": rnd["game_type"], "multiplier": effective, "win": True})
+    await db.crash_rounds.update_one({"id": rnd["id"]}, {"$set": {"settled": True, "outcome": "cashed", "cash_multiplier": effective, "settled_at": now_iso()}})
+    fresh = clean(await db.users.find_one({"id": user["id"]}))
+    return {"win": True, "crashed": False, "multiplier": effective, "payout": payout, "balance": fresh["balance"]}
+
+
+@api.post("/games/crash/settle")
+async def crash_settle(payload: CrashSettleIn, user=Depends(get_current_user)):
+    """Called by the client when the rocket crashed without a cash-out. Bet already deducted."""
+    rnd = await db.crash_rounds.find_one({"id": payload.round_id, "user_id": user["id"]})
+    if not rnd:
+        raise HTTPException(404, "Round not found")
+    if not rnd["settled"]:
+        await db.crash_rounds.update_one({"id": rnd["id"]}, {"$set": {"settled": True, "outcome": "crashed", "settled_at": now_iso()}})
+    fresh = clean(await db.users.find_one({"id": user["id"]}))
+    return {"win": False, "crash_point": rnd["crash_point"], "balance": fresh["balance"]}
+
+
+@api.get("/games/crash/status/{round_id}")
+async def crash_status(round_id: str, user=Depends(get_current_user)):
+    """Polled by the client. Reveals crash_point ONLY once the round has actually crashed."""
+    rnd = await db.crash_rounds.find_one({"id": round_id, "user_id": user["id"]})
+    if not rnd:
+        raise HTTPException(404, "Round not found")
+    started = datetime.fromisoformat(rnd["started_at"])
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    server_mult = crash_multiplier_at(elapsed)
+    crash_point = rnd["crash_point"]
+    if rnd["settled"] and rnd.get("outcome") == "cashed":
+        return {"status": "cashed", "multiplier": rnd.get("cash_multiplier"), "crash_point": crash_point}
+    if server_mult >= crash_point:
+        if not rnd["settled"]:
+            await db.crash_rounds.update_one({"id": rnd["id"]}, {"$set": {"settled": True, "outcome": "crashed", "settled_at": now_iso()}})
+        return {"status": "crashed", "crash_point": crash_point, "multiplier": crash_point}
+    return {"status": "flying", "multiplier": server_mult}
+
+
+# =========================================================
+# LIVE BET FEED (recent wins across players)
+# =========================================================
+_FEED_NAMES = [
+    "RajaKing", "LuckyStar", "AceHunter", "NoorX", "ProGamer99", "Mr_Vijay", "SkyWinner",
+    "GoldRush", "RoyalAK", "ShadowFox", "BetMaster", "TigerZ", "CrazyRider", "DiamondD",
+    "SonuBhai", "QueenBee", "FastCash", "RockyB", "MegaWin", "SilentK", "ThunderX", "ZaraPlays",
+]
+
+
+def _mask_name(name: str) -> str:
+    if len(name) <= 3:
+        return name[0] + "**"
+    return name[:2] + "***" + name[-1]
+
+
+@api.get("/games/feed")
+async def games_feed(game: Optional[str] = None, limit: int = 15):
+    """Recent real wins (masked) padded with lively synthetic entries."""
+    entries: List[dict] = []
+    q: dict = {"kind": "win"}
+    async for t in db.transactions.find(q, {"_id": 0}).sort("created_at", -1).limit(limit):
+        u = await db.users.find_one({"id": t["user_id"]}, {"name": 1})
+        nm = _mask_name((u or {}).get("name", "Player"))
+        mult = (t.get("meta") or {}).get("multiplier")
+        entries.append({
+            "name": nm,
+            "game": (t.get("meta") or {}).get("game", "crash"),
+            "amount": round(t.get("amount", 0), 2),
+            "multiplier": mult,
+            "real": True,
+        })
+    # pad with synthetic
+    while len(entries) < limit:
+        entries.append({
+            "name": _mask_name(random.choice(_FEED_NAMES)),
+            "game": game or random.choice(["crash", "aviator", "dice", "spin", "mines", "plinko"]),
+            "amount": round(random.choice([50, 120, 250, 480, 999, 1500, 3200, 7800]) * random.uniform(0.5, 1.5), 2),
+            "multiplier": round(random.uniform(1.5, 12.0), 2),
+            "real": False,
+        })
+    random.shuffle(entries)
+    return {"feed": entries}
+
+
+
 # =========================================================
 @api.get("/promotions")
 async def promotions():
