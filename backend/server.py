@@ -192,6 +192,69 @@ def crash_multiplier_at(elapsed_s: float) -> float:
     return round(1.0 + CRASH_A * elapsed_s + CRASH_B * elapsed_s * elapsed_s, 2)
 
 
+# ---- Win Go (color prediction) ----
+class WinGoBetIn(BaseModel):
+    duration: int = 60           # 30 | 60 | 180 | 300
+    bet_type: str                # color | number | size
+    value: str                   # green|violet|red | 0..9 | big|small
+    amount: float
+
+
+def wingo_color_of(n: int) -> List[str]:
+    if n == 0:
+        return ["violet", "red"]
+    if n == 5:
+        return ["violet", "green"]
+    if n in (1, 3, 7, 9):
+        return ["green"]
+    return ["red"]
+
+
+def wingo_size_of(n: int) -> str:
+    return "big" if n >= 5 else "small"
+
+
+def wingo_bet_wins(bet_type: str, value: str, n: int) -> bool:
+    if bet_type == "color":
+        return value in wingo_color_of(n)
+    if bet_type == "number":
+        return str(n) == str(value)
+    if bet_type == "size":
+        return value == wingo_size_of(n)
+    return False
+
+
+def wingo_multiplier(bet_type: str, value: str, n: int) -> float:
+    if bet_type == "color":
+        return 4.5 if value == "violet" else 2.0
+    if bet_type == "number":
+        return 9.0
+    if bet_type == "size":
+        return 2.0
+    return 0.0
+
+
+def wingo_period_info(duration: int):
+    now = datetime.now(timezone.utc)
+    epoch = now.timestamp()
+    idx = int(epoch // duration)
+    start = idx * duration
+    time_left = int(duration - (epoch - start))
+    dt = datetime.fromtimestamp(start, tz=timezone.utc)
+    display = f"{dt:%Y%m%d}{(idx % 10000):04d}"
+    return idx, time_left, display
+
+
+async def wingo_ensure_result(duration: int, period_idx: int) -> int:
+    """Return the result number for an ENDED period, generating a random one for display if absent."""
+    doc = await db.wingo_results.find_one({"duration": duration, "period": period_idx})
+    if doc:
+        return doc["number"]
+    n = random.randint(0, 9)
+    await db.wingo_results.insert_one({"duration": duration, "period": period_idx, "number": n, "created_at": now_iso()})
+    return n
+
+
 
 class DepositCreate(BaseModel):
     amount: float
@@ -814,6 +877,131 @@ async def games_feed(game: Optional[str] = None, limit: int = 15):
         })
     random.shuffle(entries)
     return {"feed": entries}
+
+
+# =========================================================
+# WIN GO — color prediction (Daman-style timed rounds)
+# =========================================================
+WINGO_LOCK_SECONDS = 5  # betting closes in the last N seconds
+
+
+async def _wingo_settle_user(user_id: str, duration: int, current_idx: int):
+    """Settle any of the user's unsettled bets for ended periods, generating a 38%-biased result."""
+    win_rate = await get_win_rate()
+    # group unsettled bets by period
+    pending = await db.wingo_bets.find({"user_id": user_id, "duration": duration, "settled": False, "period": {"$lt": current_idx}}, {"_id": 0}).to_list(500)
+    by_period: Dict[int, List[dict]] = {}
+    for b in pending:
+        by_period.setdefault(b["period"], []).append(b)
+
+    for period_idx, bets in by_period.items():
+        existing = await db.wingo_results.find_one({"duration": duration, "period": period_idx})
+        if existing:
+            result_n = existing["number"]
+        else:
+            # bias result by the user's highest-stake bet
+            main = max(bets, key=lambda x: x["amount"])
+            winnable = [n for n in range(10) if wingo_bet_wins(main["bet_type"], main["value"], n)]
+            losing = [n for n in range(10) if not wingo_bet_wins(main["bet_type"], main["value"], n)]
+            is_win = random.random() < win_rate
+            if is_win and winnable:
+                result_n = random.choice(winnable)
+            elif losing:
+                result_n = random.choice(losing)
+            else:
+                result_n = random.choice(winnable) if winnable else random.randint(0, 9)
+            await db.wingo_results.insert_one({"duration": duration, "period": period_idx, "number": result_n, "created_at": now_iso()})
+
+        # settle each bet honestly against the result
+        for b in bets:
+            win = wingo_bet_wins(b["bet_type"], b["value"], result_n)
+            payout = round(b["amount"] * wingo_multiplier(b["bet_type"], b["value"], result_n), 2) if win else 0.0
+            await db.wingo_bets.update_one({"id": b["id"]}, {"$set": {"settled": True, "win": win, "payout": payout, "result_number": result_n}})
+            if payout > 0:
+                await db.users.update_one({"id": user_id}, {"$inc": {"balance": payout}})
+                await add_transaction(user_id, "win", payout, {"game": "wingo", "period": period_idx, "value": b["value"], "result": result_n})
+
+
+@api.get("/wingo/state")
+async def wingo_state(duration: int = 60, user=Depends(get_current_user)):
+    if duration not in (30, 60, 180, 300):
+        duration = 60
+    current_idx, time_left, display = wingo_period_info(duration)
+
+    # settle user's ended bets first
+    await _wingo_settle_user(user["id"], duration, current_idx)
+
+    # build history (last 10 ended periods)
+    history = []
+    for i in range(1, 11):
+        pidx = current_idx - i
+        n = await wingo_ensure_result(duration, pidx)
+        pstart = pidx * duration
+        pdt = datetime.fromtimestamp(pstart, tz=timezone.utc)
+        history.append({
+            "period": f"{pdt:%Y%m%d}{(pidx % 10000):04d}",
+            "number": n,
+            "colors": wingo_color_of(n),
+            "size": wingo_size_of(n),
+        })
+
+    # user's recent bets
+    my_bets = await db.wingo_bets.find({"user_id": user["id"], "duration": duration}, {"_id": 0}).sort("created_at", -1).limit(20).to_list(20)
+    for b in my_bets:
+        pstart = b["period"] * duration
+        pdt = datetime.fromtimestamp(pstart, tz=timezone.utc)
+        b["period_display"] = f"{pdt:%Y%m%d}{(b['period'] % 10000):04d}"
+
+    fresh = clean(await db.users.find_one({"id": user["id"]}))
+    return {
+        "duration": duration,
+        "period": display,
+        "period_idx": current_idx,
+        "time_left": time_left,
+        "locked": time_left <= WINGO_LOCK_SECONDS,
+        "history": history,
+        "my_bets": my_bets,
+        "balance": fresh["balance"],
+    }
+
+
+@api.post("/wingo/bet")
+async def wingo_bet(payload: WinGoBetIn, user=Depends(get_current_user)):
+    duration = payload.duration if payload.duration in (30, 60, 180, 300) else 60
+    current_idx, time_left, display = wingo_period_info(duration)
+    if time_left <= WINGO_LOCK_SECONDS:
+        raise HTTPException(400, "Betting is closed for this round")
+    if payload.amount <= 0:
+        raise HTTPException(400, "Bet must be positive")
+    if payload.amount > user["balance"]:
+        raise HTTPException(400, "Insufficient balance")
+    # validate value
+    if payload.bet_type == "color" and payload.value not in ("green", "violet", "red"):
+        raise HTTPException(400, "Invalid color")
+    if payload.bet_type == "size" and payload.value not in ("big", "small"):
+        raise HTTPException(400, "Invalid size")
+    if payload.bet_type == "number" and payload.value not in [str(x) for x in range(10)]:
+        raise HTTPException(400, "Invalid number")
+
+    await db.users.update_one({"id": user["id"]}, {"$inc": {"balance": -payload.amount, "total_wagered": payload.amount}})
+    await add_transaction(user["id"], "bet", -payload.amount, {"game": "wingo", "period": current_idx, "type": payload.bet_type, "value": payload.value})
+    bet = {
+        "id": new_id(),
+        "user_id": user["id"],
+        "duration": duration,
+        "period": current_idx,
+        "bet_type": payload.bet_type,
+        "value": payload.value,
+        "amount": payload.amount,
+        "settled": False,
+        "win": None,
+        "payout": 0.0,
+        "created_at": now_iso(),
+    }
+    await db.wingo_bets.insert_one(bet.copy())
+    bet.pop("_id", None)
+    fresh = clean(await db.users.find_one({"id": user["id"]}))
+    return {"success": True, "bet": bet, "balance": fresh["balance"], "period": display, "time_left": time_left}
 
 
 

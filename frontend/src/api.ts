@@ -60,6 +60,9 @@ export const api = {
   crashSettle: (round_id: string) =>
     request('/games/crash/settle', { method: 'POST', body: JSON.stringify({ round_id }) }),
   gamesFeed: (game?: string) => request(`/games/feed${game ? `?game=${game}` : ''}`),
+  wingoState: (duration = 60) => request(`/wingo/state?duration=${duration}`),
+  wingoBet: (duration: number, bet_type: string, value: string, amount: number) =>
+    request('/wingo/bet', { method: 'POST', body: JSON.stringify({ duration, bet_type, value, amount }) }),
   // promotions / vip / notifications / support
   promotions: () => request('/promotions'),
   vip: () => request('/vip'),

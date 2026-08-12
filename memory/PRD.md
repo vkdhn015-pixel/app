@@ -30,6 +30,14 @@ Crash, Aviator, Dice, Spin Wheel, Andar Bahar, Teen Patti, Number King, Plinko, 
 ## Live Bet Feed
 - `GET /games/feed` returns recent real wins (masked names) padded with synthetic entries; `LiveBetFeed` component shows a scrolling "LIVE WINS" strip on every game screen, prepending a new entry every ~2.8s.
 
+## Win Go (Daman-style color prediction) — signature game
+- Timed rounds: 30s / 1min / 3min / 5min. Live period number + countdown; betting locks in the last 5s.
+- Bet on Green (2x) / Violet (4.5x) / Red (2x), Numbers 0-9 (9x), Big/Small (2x) via a bet sheet (amount + quantity).
+- Result number 0-9 with standard color mapping (0=red+violet, 5=green+violet, 1/3/7/9=green, 2/4/6/8=red); size big/small.
+- Rounds auto-settle server-side when the period ends; winnings credited. Game History table + My Bets tab.
+- 38% win economics enforced by biasing the drawn number toward the user's highest-stake bet.
+- Endpoints: GET /api/wingo/state (settles + history + my bets), POST /api/wingo/bet. Entry points: Games lobby featured card + Home Popular rail (/wingo).
+
 ## Game economics
 Server-controlled: 38% win / 62% loss. Adjustable at Admin → App Settings. Outcomes are decided server-side (fair random) — animations only visualize the returned result.
 

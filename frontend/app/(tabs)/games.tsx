@@ -60,6 +60,20 @@ export default function Games() {
         </ScrollView>
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}>
+        <Pressable testID="wingo-featured" onPress={() => router.push('/wingo')} style={{ marginTop: spacing.lg }}>
+          <LinearGradient colors={['#FF6B6B', '#8B5CF6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.featured}>
+            <View style={{ flex: 1 }}>
+              <View style={styles.hotBadge}><Ionicons name="flame" size={11} color="#fff" /><Text style={styles.hotText}>HOT</Text></View>
+              <Text style={styles.featuredTitle}>Win Go</Text>
+              <Text style={styles.featuredSub}>Predict color & number · win up to 9x every round</Text>
+            </View>
+            <View style={styles.featuredBalls}>
+              {[3, 5, 8].map((n, i) => (
+                <View key={i} style={[styles.fBall, { backgroundColor: i === 0 ? '#2ECA7F' : i === 1 ? '#8B5CF6' : '#FF4D4F', marginLeft: i ? -8 : 0 }]}><Text style={styles.fBallText}>{n}</Text></View>
+              ))}
+            </View>
+          </LinearGradient>
+        </Pressable>
         <View style={styles.grid}>
           {filtered.map(g => (
             <Pressable
@@ -95,6 +109,14 @@ const styles = StyleSheet.create({
   chipLabel: { fontSize: 13, fontWeight: '600', color: colors.onSurfaceSecondary },
   chipLabelActive: { color: colors.brandPrimary },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: spacing.lg },
+  featured: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: spacing.lg, ...shadows.card },
+  hotBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, alignSelf: 'flex-start', backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  hotText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  featuredTitle: { color: '#fff', fontSize: 24, fontWeight: '800', marginTop: 8 },
+  featuredSub: { color: 'rgba(255,255,255,0.92)', fontSize: 12, marginTop: 4, maxWidth: 210 },
+  featuredBalls: { flexDirection: 'row' },
+  fBall: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)' },
+  fBallText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   card: { width: '48%', backgroundColor: '#fff', borderRadius: radius.lg, padding: spacing.md, ...shadows.card },
   thumb: { height: 110, borderRadius: 16, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   cardTitle: { marginTop: 10, fontSize: 15, fontWeight: '800', color: colors.onSurface },

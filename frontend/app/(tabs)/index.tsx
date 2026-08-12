@@ -92,6 +92,10 @@ export default function Home() {
         {/* Popular games */}
         <RailHeader title="Popular Games" onSeeAll={() => router.push('/(tabs)/games')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: 12 }}>
+          <Pressable testID="tile-wingo" onPress={() => router.push('/wingo')} style={styles.tile}>
+            <LinearGradient colors={['#FF6B6B', '#8B5CF6']} style={styles.tileGrad}><Ionicons name="color-palette" size={44} color="#fff" /></LinearGradient>
+            <Text style={styles.tileLabel}>Win Go</Text>
+          </Pressable>
           {GAME_TILES.map((g) => (
             <GameTile key={g.id} game={g} onPress={() => router.push(`/game/${g.id}`)} />
           ))}
