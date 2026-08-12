@@ -35,7 +35,7 @@ const SPIN_SEGMENTS = [0, 1.5, 0, 2, 0, 3, 0, 5];
 function Particles({ show, color }: { show: number; color: string }) {
   if (!show) return null;
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
       {Array.from({ length: 10 }).map((_, i) => (
         <Particle key={`${show}-${i}`} index={i} color={color} />
       ))}
@@ -346,7 +346,7 @@ export default function GameScreen() {
           <LinearGradient colors={['#1F2937', '#111827']} style={styles.stageBg}>
             {/* dynamic drifting bg dots for crash/aviator */}
             {(gt === 'crash' || gt === 'aviator') && (
-              <Animated.View style={[StyleSheet.absoluteFill, bgStyle]} pointerEvents="none">
+              <Animated.View style={[StyleSheet.absoluteFill, bgStyle, { pointerEvents: 'none' }]}>
                 {[...Array(6)].map((_, i) => (
                   <View key={i} style={{ position: 'absolute', top: 20 + i * 34, left: 40 + i * 48, width: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.25)' }} />
                 ))}
