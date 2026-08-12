@@ -569,6 +569,60 @@ async def play_game(payload: PlayGameIn, user=Depends(get_current_user)):
         if is_win:
             payout = payload.bet_amount * segments[idx]
         result_meta.update({"segment_index": idx, "segment_multiplier": segments[idx]})
+    elif gt == "andar-bahar":
+        pick = payload.params.get("pick", "andar")
+        result_meta["pick"] = pick
+        result_meta["winner"] = pick if is_win else ("bahar" if pick == "andar" else "andar")
+        if is_win: payout = payload.bet_amount * 1.9; result_meta["multiplier"] = 1.9
+    elif gt == "teenpatti":
+        hands = ["Trail", "Pure Sequence", "Sequence", "Color", "Pair", "High Card"]
+        result_meta["player_hand"] = random.choice(hands); result_meta["dealer_hand"] = random.choice(hands)
+        if is_win: payout = payload.bet_amount * 2.0; result_meta["multiplier"] = 2.0
+    elif gt == "number-king":
+        pick = int(payload.params.get("number", 5)); pick = max(0, min(9, pick))
+        roll = pick if is_win else random.choice([n for n in range(10) if n != pick])
+        if is_win: payout = payload.bet_amount * 9.0
+        result_meta.update({"pick": pick, "roll": roll, "multiplier": 9.0})
+    elif gt == "plinko":
+        slots = [10, 4, 2, 1.2, 0.5, 1.2, 2, 4, 10]
+        idx = random.choice([i for i, m in enumerate(slots) if (m > 1 if is_win else m <= 1)])
+        if is_win: payout = payload.bet_amount * slots[idx]
+        result_meta.update({"slot": idx, "multiplier": slots[idx]})
+    elif gt == "mines":
+        picks = int(payload.params.get("picks", 3)); picks = max(1, min(5, picks))
+        multiplier = round(1.0 + picks * 0.6, 2)
+        if is_win:
+            payout = payload.bet_amount * multiplier
+            revealed = ["gem"] * picks
+        else:
+            mine_at = random.randint(0, picks - 1)
+            revealed = ["gem" if i != mine_at else "mine" for i in range(picks)]
+        result_meta.update({"picks": picks, "revealed": revealed, "multiplier": multiplier})
+    elif gt == "match3":
+        symbols = ["A", "B", "C", "S", "D", "7"]
+        if is_win:
+            sym = random.choice(symbols); board = [sym, sym, sym]
+            mult = 5.0 if sym in ("D", "7") else 2.5
+            payout = payload.bet_amount * mult; result_meta["multiplier"] = mult
+        else:
+            board = random.sample(symbols, 3)
+        result_meta["board"] = board
+    elif gt == "bullseye":
+        if is_win:
+            ring = random.choices(["bullseye", "inner", "middle"], weights=[1, 2, 3])[0]
+            mult = {"bullseye": 10.0, "inner": 5.0, "middle": 2.0}[ring]
+            payout = payload.bet_amount * mult
+            result_meta.update({"ring": ring, "multiplier": mult})
+        else:
+            result_meta.update({"ring": "miss", "multiplier": 0})
+    elif gt == "sudoku":
+        if is_win: payout = payload.bet_amount * 2.5; result_meta["multiplier"] = 2.5
+    elif gt == "tournament":
+        rank = random.randint(1, 3) if is_win else random.randint(4, 10)
+        if is_win:
+            mult = {1: 8.0, 2: 4.0, 3: 2.0}[rank]
+            payout = payload.bet_amount * mult; result_meta["multiplier"] = mult
+        result_meta["rank"] = rank
     else:
         # generic
         if is_win:
