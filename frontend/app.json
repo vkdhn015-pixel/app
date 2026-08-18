@@ -38,6 +38,7 @@
       ]
     ],
     "experiments": {
+      "baseUrl":"/app"
       "typedRoutes": true
     }
   }
